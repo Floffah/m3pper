@@ -299,6 +299,9 @@ export const createUseMap = () =>
                 const oldParentChildren = oldParent.childrenIds.filter(
                     (id) => id !== nodeId,
                 );
+                const oldNodeIndex = oldParent.childrenIds.indexOf(nodeId);
+                if (oldNodeIndex === -1) return state;
+
                 const targetParentChildren =
                     oldParent.id === targetParent.id
                         ? oldParentChildren
@@ -306,9 +309,17 @@ export const createUseMap = () =>
                               (id) => id !== nodeId,
                           );
                 const nextTargetParentChildren = [...targetParentChildren];
+                const targetIndexAfterRemoval =
+                    oldParent.id === targetParent.id &&
+                    oldNodeIndex < targetIndex
+                        ? targetIndex - 1
+                        : targetIndex;
                 const nextTargetIndex = Math.max(
                     0,
-                    Math.min(targetIndex, nextTargetParentChildren.length),
+                    Math.min(
+                        targetIndexAfterRemoval,
+                        nextTargetParentChildren.length,
+                    ),
                 );
 
                 nextTargetParentChildren.splice(nextTargetIndex, 0, nodeId);
