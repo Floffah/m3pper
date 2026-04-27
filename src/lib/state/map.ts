@@ -40,6 +40,12 @@ interface RootNode extends Omit<GroupNode, "parentId"> {
 }
 
 type Node = BoxNode | SphereNode | GroupNode;
+export type MapNode = Node | RootNode;
+export type FlattenedMapNode = {
+    id: string;
+    node: MapNode;
+    treeDepth: number;
+};
 
 type OptimisticNode = Omit<Node, keyof BaseNode> &
     Pick<Node, "type"> &
@@ -47,7 +53,7 @@ type OptimisticNode = Omit<Node, keyof BaseNode> &
 
 interface MapState {
     rootId: string;
-    nodes: Record<string, Node | RootNode>;
+    nodes: Record<string, MapNode>;
 }
 
 interface MapActions {
@@ -59,6 +65,22 @@ interface MapActions {
 }
 
 export type MapStore = MapState & MapActions;
+
+export function flattenMapNodes(
+    nodes: Record<string, MapNode>,
+    nodeId: string,
+    treeDepth = 0,
+): FlattenedMapNode[] {
+    const node = nodes[nodeId];
+    if (!node) return [];
+
+    return [
+        { id: nodeId, node, treeDepth },
+        ...node.childrenIds.flatMap((childId) =>
+            flattenMapNodes(nodes, childId, treeDepth + 1),
+        ),
+    ];
+}
 
 export const defaultInitState: MapState = {
     rootId: "root",
