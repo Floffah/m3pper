@@ -58,7 +58,11 @@ interface MapState {
 
 interface MapActions {
     addNode: (node: OptimisticNode) => Node;
-    reparentNode: (nodeId: string, node: Node) => void;
+    moveNode: (
+        nodeId: string,
+        targetParentId: string,
+        targetIndex: number,
+    ) => void;
     updateNode: (nodeId: string, node: Node) => void;
     groupSelectedNodes: (nodeIds: string[]) => void;
     deleteNode: (nodeId: string) => void;
@@ -69,17 +73,41 @@ export type MapStore = MapState & MapActions;
 export function flattenMapNodes(
     nodes: Record<string, MapNode>,
     nodeId: string,
-    treeDepth = 0,
 ): FlattenedMapNode[] {
     const node = nodes[nodeId];
     if (!node) return [];
 
-    return [
-        { id: nodeId, node, treeDepth },
-        ...node.childrenIds.flatMap((childId) =>
-            flattenMapNodes(nodes, childId, treeDepth + 1),
-        ),
-    ];
+    const flattenChild = (
+        childId: string,
+        treeDepth: number,
+    ): FlattenedMapNode[] => {
+        const childNode = nodes[childId];
+        if (!childNode) return [];
+
+        return [
+            { id: childId, node: childNode, treeDepth },
+            ...childNode.childrenIds.flatMap((grandchildId) =>
+                flattenChild(grandchildId, treeDepth + 1),
+            ),
+        ];
+    };
+
+    return node.childrenIds.flatMap((childId) => flattenChild(childId, 0));
+}
+
+export function isDescendantNode(
+    nodes: Record<string, MapNode>,
+    possibleDescendantId: string,
+    ancestorId: string,
+): boolean {
+    const ancestor = nodes[ancestorId];
+    if (!ancestor) return false;
+
+    return ancestor.childrenIds.some(
+        (childId) =>
+            childId === possibleDescendantId ||
+            isDescendantNode(nodes, possibleDescendantId, childId),
+    );
 }
 
 export const defaultInitState: MapState = {
@@ -88,9 +116,20 @@ export const defaultInitState: MapState = {
         root: {
             id: "root",
             type: "group",
-            childrenIds: ["box-1"],
+            childrenIds: ["group-1", "group-2"],
             transform: {
                 position: [0, 0, 0],
+                rotation: [0, 0, 0],
+                scale: [1, 1, 1],
+            },
+        },
+        "group-1": {
+            id: "group-1",
+            type: "group",
+            parentId: "root",
+            childrenIds: ["box-1"],
+            transform: {
+                position: [0, 0.5, 0],
                 rotation: [0, 0, 0],
                 scale: [1, 1, 1],
             },
@@ -98,7 +137,7 @@ export const defaultInitState: MapState = {
         "box-1": {
             id: "box-1",
             type: "box",
-            parentId: "root",
+            parentId: "group-1",
             childrenIds: [],
             transform: {
                 position: [0, 0, 0],
@@ -107,7 +146,32 @@ export const defaultInitState: MapState = {
             },
             width: 1,
             height: 1,
-            depth: 1,
+            depth: 4,
+        },
+        "group-2": {
+            id: "group-2",
+            type: "group",
+            parentId: "root",
+            childrenIds: ["box-2"],
+            transform: {
+                position: [0, 0.5, 2.5],
+                rotation: [0, 0, 0],
+                scale: [1, 1, 1],
+            },
+        },
+        "box-2": {
+            id: "box-2",
+            type: "box",
+            parentId: "group-2",
+            childrenIds: [],
+            transform: {
+                position: [0, 0, 0],
+                rotation: [0, 0, 0],
+                scale: [1, 1, 1],
+            },
+            width: 1.5,
+            height: 1.5,
+            depth: 1.5,
         },
     },
 };
@@ -144,21 +208,68 @@ export const createUseMap = () =>
             return newNode as Node;
         },
 
-        reparentNode: (nodeId, node) =>
+        moveNode: (nodeId, targetParentId, targetIndex) =>
             set((state) => {
-                const parent = state.nodes[node.parentId];
+                if (nodeId === state.rootId) return state;
+
+                const node = state.nodes[nodeId];
+                const targetParent = state.nodes[targetParentId];
+
+                if (
+                    !node ||
+                    !targetParent ||
+                    !("parentId" in node) ||
+                    targetParent.type !== "group" ||
+                    nodeId === targetParentId ||
+                    isDescendantNode(state.nodes, targetParentId, nodeId)
+                ) {
+                    return state;
+                }
+
+                const oldParent = state.nodes[node.parentId];
+                if (!oldParent) return state;
+
+                const oldParentChildren = oldParent.childrenIds.filter(
+                    (id) => id !== nodeId,
+                );
+                const targetParentChildren =
+                    oldParent.id === targetParent.id
+                        ? oldParentChildren
+                        : targetParent.childrenIds.filter(
+                              (id) => id !== nodeId,
+                          );
+                const nextTargetParentChildren = [...targetParentChildren];
+                const nextTargetIndex = Math.max(
+                    0,
+                    Math.min(targetIndex, nextTargetParentChildren.length),
+                );
+
+                nextTargetParentChildren.splice(nextTargetIndex, 0, nodeId);
 
                 return {
                     nodes: {
                         ...state.nodes,
                         [nodeId]: {
-                            ...state.nodes[nodeId],
-                            parentId: node.parentId,
+                            ...node,
+                            parentId: targetParentId,
                         },
-                        [parent.id]: {
-                            ...parent,
-                            childrenIds: [...parent.childrenIds, nodeId],
-                        },
+                        ...(oldParent.id === targetParent.id
+                            ? {
+                                  [oldParent.id]: {
+                                      ...oldParent,
+                                      childrenIds: nextTargetParentChildren,
+                                  },
+                              }
+                            : {
+                                  [oldParent.id]: {
+                                      ...oldParent,
+                                      childrenIds: oldParentChildren,
+                                  },
+                                  [targetParent.id]: {
+                                      ...targetParent,
+                                      childrenIds: nextTargetParentChildren,
+                                  },
+                              }),
                     },
                 };
             }),
