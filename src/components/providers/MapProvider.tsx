@@ -4,7 +4,7 @@ import { PropsWithChildren, createContext, useContext, useMemo } from "react";
 import { UseBoundStore } from "zustand/react";
 import { StoreApi } from "zustand/vanilla";
 
-import { MapStore, createUseMap } from "@/lib/state/map";
+import { type MapStore, createUseMap } from "@/lib/state/map";
 
 const MapContext = createContext<ReturnType<typeof createUseMap>>(null!);
 

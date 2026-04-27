@@ -16,6 +16,7 @@ import {
 } from "react";
 import { useShallow } from "zustand/react/shallow";
 
+import { useEditor } from "@/components/providers/EditorProvider";
 import { useMap } from "@/components/providers/MapProvider";
 import {
     Sidebar,
@@ -30,7 +31,7 @@ import {
     SidebarMenuItem,
     SidebarProvider,
 } from "@/components/ui/sidebar";
-import { flattenMapNodes } from "@/lib/state/map";
+import { flattenMapNodes } from "@/lib/map";
 import { cn } from "@/lib/utils";
 
 type DropIntent = {
@@ -57,11 +58,16 @@ function SidebarNode({
     registerRowElement: (id: string, element: HTMLElement | null) => void;
     dropIntent: DropIntent | null;
 }) {
+    const editor = useEditor();
+
     const node = useMap(useShallow((state) => state.nodes[id]));
+
     const { ref: draggableRef, isDragSource } = useDraggable({ id });
     const { ref: droppableRef } = useDroppable({ id });
-    const isDropTarget = dropIntent?.targetId === id;
-    const dropPlacement = isDropTarget ? dropIntent.placement : null;
+
+    const dropPlacement =
+        dropIntent?.targetId === id ? dropIntent.placement : null;
+
     const rowRef = useCallback(
         (element: HTMLLIElement | null) => {
             draggableRef(element);
@@ -87,10 +93,29 @@ function SidebarNode({
             )}
             <SidebarMenuButton
                 asChild
-                className={cn(
-                    dropPlacement === "inside" &&
-                        "bg-sky-500/10 text-sidebar-accent-foreground ring-1 ring-sky-500/70",
-                )}
+                className={cn({
+                    "bg-sky-500/10 text-sidebar-accent-foreground ring-1 ring-sky-500/70":
+                        dropPlacement === "inside",
+                    "bg-sidebar-accent text-sidebar-accent-foreground":
+                        editor.selectedNodeIds.includes(id),
+                })}
+                onClick={(e) => {
+                    e.stopPropagation();
+
+                    if (!e.metaKey && !e.ctrlKey) {
+                        editor.clearSelection();
+                    }
+
+                    editor.selectNode(id);
+                }}
+                onContextMenu={(e) => {
+                    e.preventDefault();
+                    if (!editor.selectedNodeIds.includes(id)) {
+                        editor.clearSelection();
+                        editor.selectNode(id);
+                    }
+                    editor.openContextMenu(e.clientX, e.clientY);
+                }}
             >
                 <span>
                     {node.type} ({node.id})
@@ -101,18 +126,24 @@ function SidebarNode({
 }
 
 export default function EditorSidebar({ children }: PropsWithChildren) {
+    const editor = useEditor();
+
     const nodeMap = useMap(useShallow((state) => state.nodes));
     const rootId = useMap(useShallow((state) => state.rootId));
+
     const moveNode = useMap(useShallow((state) => state.moveNode));
+
     const lastDropTargetId = useRef<string | null>(null);
     const lastPointerY = useRef<number | null>(null);
     const rowElements = useRef(new Map<string, HTMLElement>());
+
     const [dropIntent, setDropIntent] = useState<DropIntent | null>(null);
 
     const nodes = useMemo(
         () => flattenMapNodes(nodeMap, rootId),
         [nodeMap, rootId],
     );
+
     const dndPlugins = useMemo<NonNullable<DragDropManagerInput["plugins"]>>(
         () => (defaultPlugins) =>
             defaultPlugins.map((plugin) =>
@@ -276,7 +307,7 @@ export default function EditorSidebar({ children }: PropsWithChildren) {
         <SidebarProvider>
             <Sidebar>
                 <SidebarHeader></SidebarHeader>
-                <SidebarContent>
+                <SidebarContent onClick={editor.clearSelection}>
                     <SidebarGroup>
                         <SidebarGroupLabel>Nodes</SidebarGroupLabel>
                         <DragDropProvider

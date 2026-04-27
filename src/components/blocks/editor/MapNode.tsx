@@ -59,92 +59,96 @@ export function MapNode({ id }: { id: string }) {
 
     if (!node) return null;
 
-    return (
-        <>
-            {node.type === "box" && (
-                <PivotControls
-                    enabled={isSelected}
-                    autoTransform={false}
-                    disableScaling
-                    matrix={matrix}
-                    scale={1.1}
-                    onDrag={(localMatrix) => {
-                        updateNode(id, {
-                            ...node,
-                            transform: {
-                                ...node.transform,
-                                ...matrixToTransform(localMatrix),
-                            },
-                        });
+    if (node.type === "box") {
+        return (
+            <PivotControls
+                enabled={isSelected}
+                autoTransform={false}
+                disableScaling
+                matrix={matrix}
+                scale={1.1}
+                onDrag={(localMatrix) => {
+                    updateNode(id, {
+                        ...node,
+                        transform: {
+                            ...node.transform,
+                            ...matrixToTransform(localMatrix),
+                        },
+                    });
+                }}
+            >
+                <mesh
+                    onPointerOver={(e) => {
+                        e.stopPropagation();
+                        setIsHovered(true);
                     }}
-                >
-                    <mesh
-                        onPointerOver={(e) => {
-                            e.stopPropagation();
-                            setIsHovered(true);
-                        }}
-                        onPointerOut={(e) => {
-                            e.stopPropagation();
-                            setIsHovered(false);
-                        }}
-                        onClick={(e) => {
-                            e.stopPropagation();
+                    onPointerOut={(e) => {
+                        e.stopPropagation();
+                        setIsHovered(false);
+                    }}
+                    onClick={(e) => {
+                        e.stopPropagation();
 
-                            if (!e.metaKey && !e.ctrlKey) {
-                                editor.clearSelection();
-                            }
+                        if (!e.metaKey && !e.ctrlKey) {
+                            editor.clearSelection();
+                        }
 
-                            editor.selectNode(id);
-                        }}
-                        onContextMenu={(e) => {
-                            e.stopPropagation();
-                            e.nativeEvent.preventDefault();
+                        editor.selectNode(id);
+                    }}
+                    onContextMenu={(e) => {
+                        e.stopPropagation();
+                        e.nativeEvent.preventDefault();
+
+                        if (!editor.selectedNodeIds.includes(id)) {
                             editor.clearSelection();
                             editor.selectNode(id);
-                            editor.openContextMenu(
-                                e.nativeEvent.clientX,
-                                e.nativeEvent.clientY,
-                            );
-                        }}
-                    >
-                        <boxGeometry
-                            args={[node.width, node.height, node.depth]}
-                        />
-                        <meshStandardMaterial
-                            color={node.material?.color ?? "white"}
-                        />
-                        <Edges
-                            visible={isSelected}
-                            color="#f59e0b"
-                            lineWidth={3}
-                            transparent
-                            opacity={0.9}
-                        />
-                        <Edges
-                            visible={isHovered && !isSelected}
-                            color="#60a5fa"
-                            lineWidth={1.5}
-                            transparent
-                            opacity={0.45}
-                        />
-                    </mesh>
-                    {node.childrenIds.map((childId) => (
-                        <MapNode key={childId} id={childId} />
-                    ))}
-                </PivotControls>
-            )}
+                        }
 
-            {node.type === "group" && (
-                <group
-                    position={node.transform.position}
-                    rotation={node.transform.rotation}
-                    scale={node.transform.scale}
+                        editor.openContextMenu(
+                            e.nativeEvent.clientX,
+                            e.nativeEvent.clientY,
+                        );
+                    }}
                 >
-                    {node.childrenIds.map((childId) => (
-                        <MapNode key={childId} id={childId} />
-                    ))}
-                </group>
-            )}
-        </>
-    );
+                    <boxGeometry args={[node.width, node.height, node.depth]} />
+                    <meshStandardMaterial
+                        color={node.material?.color ?? "white"}
+                    />
+                    <Edges
+                        visible={isSelected}
+                        color="#f59e0b"
+                        lineWidth={3}
+                        transparent
+                        opacity={0.9}
+                    />
+                    <Edges
+                        visible={isHovered && !isSelected}
+                        color="#60a5fa"
+                        lineWidth={1.5}
+                        transparent
+                        opacity={0.45}
+                    />
+                </mesh>
+                {node.childrenIds.map((childId) => (
+                    <MapNode key={childId} id={childId} />
+                ))}
+            </PivotControls>
+        );
+    }
+
+    if (node.type === "group") {
+        return (
+            <group
+                position={node.transform.position}
+                rotation={node.transform.rotation}
+                scale={node.transform.scale}
+            >
+                {node.childrenIds.map((childId) => (
+                    <MapNode key={childId} id={childId} />
+                ))}
+            </group>
+        );
+    }
+
+    return null;
 }
