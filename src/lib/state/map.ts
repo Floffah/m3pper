@@ -1,4 +1,5 @@
 import { nanoid } from "nanoid";
+import { Euler, Matrix4, Quaternion, Vector3 } from "three";
 import { create } from "zustand/react";
 
 interface BaseNode {
@@ -40,6 +41,7 @@ interface RootNode extends Omit<GroupNode, "parentId"> {
 }
 
 type Node = BoxNode | SphereNode | GroupNode;
+export type NodeTransform = BaseNode["transform"];
 export type MapNode = Node | RootNode;
 export type FlattenedMapNode = {
     id: string;
@@ -69,6 +71,54 @@ interface MapActions {
 }
 
 export type MapStore = MapState & MapActions;
+
+export function nodeTransformToMatrix(transform: NodeTransform) {
+    return new Matrix4().compose(
+        new Vector3(...transform.position),
+        new Quaternion().setFromEuler(new Euler(...transform.rotation)),
+        new Vector3(...transform.scale),
+    );
+}
+
+export function matrixToNodeTransform(matrix: Matrix4): NodeTransform {
+    const position = new Vector3();
+    const quaternion = new Quaternion();
+    const rotation = new Euler();
+    const scale = new Vector3();
+
+    matrix.decompose(position, quaternion, scale);
+    rotation.setFromQuaternion(quaternion);
+
+    return {
+        position: [position.x, position.y, position.z],
+        rotation: [rotation.x, rotation.y, rotation.z],
+        scale: [scale.x, scale.y, scale.z],
+    };
+}
+
+export function getNodeWorldMatrix(
+    nodes: Record<string, MapNode>,
+    nodeId: string,
+) {
+    const path: MapNode[] = [];
+    const visitedNodeIds = new Set<string>();
+    let currentNode = nodes[nodeId];
+
+    while (currentNode && !visitedNodeIds.has(currentNode.id)) {
+        visitedNodeIds.add(currentNode.id);
+        path.unshift(currentNode);
+
+        if (!("parentId" in currentNode)) break;
+
+        currentNode = nodes[currentNode.parentId];
+    }
+
+    return path.reduce(
+        (matrix, node) =>
+            matrix.multiply(nodeTransformToMatrix(node.transform)),
+        new Matrix4(),
+    );
+}
 
 export function flattenMapNodes(
     nodes: Record<string, MapNode>,
@@ -229,6 +279,23 @@ export const createUseMap = () =>
                 const oldParent = state.nodes[node.parentId];
                 if (!oldParent) return state;
 
+                const nextTransform =
+                    oldParent.id === targetParent.id
+                        ? node.transform
+                        : matrixToNodeTransform(
+                              new Matrix4()
+                                  .copy(
+                                      getNodeWorldMatrix(
+                                          state.nodes,
+                                          targetParentId,
+                                      ),
+                                  )
+                                  .invert()
+                                  .multiply(
+                                      getNodeWorldMatrix(state.nodes, nodeId),
+                                  ),
+                          );
+
                 const oldParentChildren = oldParent.childrenIds.filter(
                     (id) => id !== nodeId,
                 );
@@ -252,6 +319,7 @@ export const createUseMap = () =>
                         [nodeId]: {
                             ...node,
                             parentId: targetParentId,
+                            transform: nextTransform,
                         },
                         ...(oldParent.id === targetParent.id
                             ? {
