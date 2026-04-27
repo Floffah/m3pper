@@ -1,10 +1,12 @@
+import { type DragDropManagerInput, Feedback } from "@dnd-kit/dom";
 import {
     DragDropProvider,
     type DragEndEvent,
     type DragMoveEvent,
     type DragOverEvent,
+    useDraggable,
+    useDroppable,
 } from "@dnd-kit/react";
-import { isSortableOperation, useSortable } from "@dnd-kit/react/sortable";
 import {
     PropsWithChildren,
     useCallback,
@@ -46,33 +48,37 @@ function getPointerY(event: Event | undefined) {
 
 function SidebarNode({
     id,
-    index,
     treeDepth,
     registerRowElement,
     dropIntent,
 }: {
     id: string;
-    index: number;
     treeDepth: number;
     registerRowElement: (id: string, element: HTMLElement | null) => void;
     dropIntent: DropIntent | null;
 }) {
     const node = useMap(useShallow((state) => state.nodes[id]));
-    const { ref } = useSortable({ id, index });
+    const { ref: draggableRef, isDragSource } = useDraggable({ id });
+    const { ref: droppableRef } = useDroppable({ id });
     const isDropTarget = dropIntent?.targetId === id;
     const dropPlacement = isDropTarget ? dropIntent.placement : null;
     const rowRef = useCallback(
         (element: HTMLLIElement | null) => {
-            ref(element);
+            draggableRef(element);
+            droppableRef(element);
             registerRowElement(id, element);
         },
-        [id, ref, registerRowElement],
+        [draggableRef, droppableRef, id, registerRowElement],
     );
 
     if (!node) return null;
 
     return (
-        <SidebarMenuItem ref={rowRef} style={{ marginLeft: treeDepth * 12 }}>
+        <SidebarMenuItem
+            ref={rowRef}
+            className={cn(isDragSource && "opacity-45")}
+            style={{ marginLeft: treeDepth * 12 }}
+        >
             {dropPlacement === "before" && (
                 <div className="absolute -top-px right-1 left-1 z-10 h-0.5 rounded-full bg-sky-500" />
             )}
@@ -106,6 +112,18 @@ export default function EditorSidebar({ children }: PropsWithChildren) {
     const nodes = useMemo(
         () => flattenMapNodes(nodeMap, rootId),
         [nodeMap, rootId],
+    );
+    const dndPlugins = useMemo<NonNullable<DragDropManagerInput["plugins"]>>(
+        () => (defaultPlugins) =>
+            defaultPlugins.map((plugin) =>
+                plugin === Feedback
+                    ? Feedback.configure({
+                          feedback: "clone",
+                          dropAnimation: null,
+                      })
+                    : plugin,
+            ),
+        [],
     );
 
     const registerRowElement = useCallback(
@@ -193,50 +211,12 @@ export default function EditorSidebar({ children }: PropsWithChildren) {
         return moveBesideTarget(draggedId, intent.targetId, intent.placement);
     };
 
-    const moveToProjectedIndex = (draggedId: string, targetIndex: number) => {
-        const nodesWithoutDragged = nodes.filter(({ id }) => id !== draggedId);
-        const nodeAtIndex = nodesWithoutDragged[targetIndex];
-        const previousNode = nodesWithoutDragged[targetIndex - 1];
-
-        if (nodeAtIndex && "parentId" in nodeAtIndex.node) {
-            const targetParent = nodeMap[nodeAtIndex.node.parentId];
-            if (!targetParent) return;
-
-            const targetSiblingIndex = targetParent.childrenIds.indexOf(
-                nodeAtIndex.id,
-            );
-            if (targetSiblingIndex === -1) return;
-
-            moveNode(draggedId, nodeAtIndex.node.parentId, targetSiblingIndex);
-            return;
-        }
-
-        if (previousNode && "parentId" in previousNode.node) {
-            const targetParent = nodeMap[previousNode.node.parentId];
-            if (!targetParent) return;
-
-            const targetSiblingIndex = targetParent.childrenIds.indexOf(
-                previousNode.id,
-            );
-            if (targetSiblingIndex === -1) return;
-
-            moveNode(
-                draggedId,
-                previousNode.node.parentId,
-                targetSiblingIndex + 1,
-            );
-            return;
-        }
-
-        moveNode(draggedId, rootId, 0);
-    };
-
     const handleDragEnd = (event: DragEndEvent) => {
         const lastTargetId = lastDropTargetId.current;
         lastDropTargetId.current = null;
         setDropIntent(null);
 
-        if (event.canceled || !isSortableOperation(event.operation)) return;
+        if (event.canceled) return;
 
         const { source, target } = event.operation;
         if (!source) return;
@@ -259,10 +239,6 @@ export default function EditorSidebar({ children }: PropsWithChildren) {
 
             lastPointerY.current = null;
             return;
-        }
-
-        if (source.index !== source.initialIndex) {
-            moveToProjectedIndex(draggedId, source.index);
         }
 
         lastPointerY.current = null;
@@ -304,17 +280,17 @@ export default function EditorSidebar({ children }: PropsWithChildren) {
                     <SidebarGroup>
                         <SidebarGroupLabel>Nodes</SidebarGroupLabel>
                         <DragDropProvider
+                            plugins={dndPlugins}
                             onDragEnd={handleDragEnd}
                             onDragMove={handleDragMove}
                             onDragOver={handleDragOver}
                         >
                             <SidebarGroupContent>
                                 <SidebarMenu>
-                                    {nodes.map(({ id, treeDepth }, idx) => (
+                                    {nodes.map(({ id, treeDepth }) => (
                                         <SidebarNode
                                             key={id}
                                             id={id}
-                                            index={idx}
                                             registerRowElement={
                                                 registerRowElement
                                             }
